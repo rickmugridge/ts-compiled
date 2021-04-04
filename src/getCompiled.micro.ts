@@ -133,8 +133,7 @@ describe("generate", () => {
 
     it("generateBuilder", () => {
         const fileName = "/Users/rickmugridge/Documents/working/ts-compiled/src/generate/Eg.ts";
-        const result = generateBuilder(fileName, ['Logger'],
-            {}, {Colour})
+        const result = generateBuilder(fileName, [], {}, {Colour})
         assertThat(result).is(`
 export class LoggerBuilder {
   logger: Logger = {
