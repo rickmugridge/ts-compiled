@@ -1,12 +1,14 @@
-import {SyntaxKind, TypeNode} from "typescript";
+import * as ts from "typescript";
+import {SyntaxKind} from "typescript";
 import {ofType} from "mismatched/dist/src/ofType";
 import {TGenericArgument, TGenericParameter, TParam, TType, TTypeKind} from "./TType";
 import {getName} from "./getCompiled";
 
-export const getCompiledType = (type: TypeNode,
+export const getCompiledType = (type: ts.TypeNode | undefined,
                                 elementaryClassSet: Set<string>,
-                                enumMap: Map<string, string>): TType => {
-    const typeAny = type as any;
+                                enumMap: Map<string, string[]>): TType => {
+    if (!type)
+        return {kind: TTypeKind.Unknown}
     switch (type.kind) {
         case SyntaxKind.StringKeyword:
             return {kind: TTypeKind.String}
@@ -21,24 +23,36 @@ export const getCompiledType = (type: TypeNode,
         case SyntaxKind.AnyKeyword:
             return {kind: TTypeKind.UserClass, name: 'any', generics: []}
         case SyntaxKind.TypeReference:
-            return handleTypeReference(typeAny, elementaryClassSet, enumMap)
+            if (ts.isTypeReferenceNode(type))
+                return handleTypeReference(type, elementaryClassSet, enumMap)
+            return {kind: TTypeKind.Unknown}
         case SyntaxKind.FunctionType:
-            return {
-                kind: TTypeKind.Arrow,
-                parameters: mapParameters(typeAny.parameters, elementaryClassSet, enumMap),
-                resultType: getCompiledType(typeAny.type, elementaryClassSet, enumMap)
-            }
+            if (ts.isFunctionTypeNode(type))
+                return {
+                    kind: TTypeKind.Arrow,
+                    parameters: mapParameters(type.parameters, elementaryClassSet, enumMap),
+                    resultType: getCompiledType(type.type, elementaryClassSet, enumMap)
+                }
+            return {kind: TTypeKind.Unknown}
         case SyntaxKind.UnionType:
-            return {kind: TTypeKind.Union, elements: mapElements(typeAny.types, elementaryClassSet, enumMap)}
+            if (ts.isUnionTypeNode(type))
+                return {kind: TTypeKind.Union, elements: mapElements(type.types, elementaryClassSet, enumMap)}
+            return {kind: TTypeKind.Unknown}
         case SyntaxKind.IntersectionType:
-            return {kind: TTypeKind.Intersection, elements: mapElements(typeAny.types, elementaryClassSet, enumMap)}
+            if (ts.isIntersectionTypeNode(type))
+                return {kind: TTypeKind.Intersection, elements: mapElements(type.types, elementaryClassSet, enumMap)}
+            return {kind: TTypeKind.Unknown}
         case SyntaxKind.ArrayType:
-            return {
-                kind: TTypeKind.Array,
-                elementType: getCompiledType(typeAny.elementType, elementaryClassSet, enumMap)
-            }
+            if (ts.isArrayTypeNode(type))
+                return {
+                    kind: TTypeKind.Array,
+                    elementType: getCompiledType(type.elementType, elementaryClassSet, enumMap)
+                }
+            return {kind: TTypeKind.Unknown}
         case SyntaxKind.TupleType:
-            return {kind: TTypeKind.Tuple, elements: mapElements(typeAny.types, elementaryClassSet, enumMap)}
+            if (ts.isTupleTypeNode(type))
+                return {kind: TTypeKind.Tuple, elements: mapElements(type.elements, elementaryClassSet, enumMap)}
+            return {kind: TTypeKind.Unknown}
         case SyntaxKind.VoidKeyword:
             return {kind: TTypeKind.Void}
         default:
@@ -59,15 +73,15 @@ const builtInClassSet: Set<string> = new Set(
         'WeakMap', 'WeakSet', 'WebAssembly'
     ])
 
-const handleTypeReference = (type: any,
+const handleTypeReference = (type: ts.TypeReferenceNode,
                              elementaryClassSet: Set<string>,
-                             enumMap: Map<string, string>): TType => {
+                             enumMap: Map<string, string[]>): TType => {
     const name = getName(type.typeName);
     if (builtInClassSet.has(name) || elementaryClassSet.has(name))
         return {kind: TTypeKind.BuiltInClass, typeName: name}
-    const enumValue = enumMap.get(name)
-    if (enumValue)
-        return {kind: TTypeKind.Enum, enumName: name, defaultValueName: enumValue}
+    const elementNames = enumMap.get(name)
+    if (elementNames)
+        return {kind: TTypeKind.Enum, name, elementNames}
     return {
         kind: TTypeKind.UserClass,
         name,
@@ -75,24 +89,27 @@ const handleTypeReference = (type: any,
     }
 }
 
-const mapElements = (elements: any[],
+const mapElements = (elements: ts.NodeArray<ts.TypeNode>,
                      elementaryClassSet: Set<string>,
-                     enumMap: Map<string, string>): TType[] =>
+                     enumMap: Map<string, string[]>): TType[] =>
     elements.filter(e => ofType.isObject(e)).map(e => getCompiledType(e, elementaryClassSet, enumMap))
 
-const mapParameters = (parameters: any[],
+const mapParameters = (parameters: ts.NodeArray<ts.ParameterDeclaration>,
                        elementaryClassSet: Set<string>,
-                       enumMap: Map<string, string>): TParam[] =>
+                       enumMap: Map<string, string[]>): TParam[] =>
     parameters.map(p => ({
-        name: p.name.escapedText,
+        name: getName(p.name),
         type: getCompiledType(p.type, elementaryClassSet, enumMap)
     }))
 
-export const mapGenericArguments = (typeArguments: any[],
+export const mapGenericArguments = (typeArguments: ts.NodeArray<ts.TypeNode> | undefined,
                                     elementaryClassSet: Set<string>,
-                                    enumMap: Map<string, string>): TGenericArgument[] =>
-    mapElements(typeArguments || [], elementaryClassSet, enumMap).map(t =>
+                                    enumMap: Map<string, string[]>): TGenericArgument[] => {
+    if (!typeArguments)
+        return []
+    return mapElements(typeArguments, elementaryClassSet, enumMap).map(t =>
         ({kind: TTypeKind.GenericArgument, type: t, generics: []}))
+}
 
-export const mapGenericParameters = (typeParameters?: any[]): TGenericParameter[] =>
+export const mapGenericParameters = (typeParameters?: ts.NodeArray<ts.TypeParameterDeclaration>): TGenericParameter[] =>
     (typeParameters || []).filter(e => ofType.isObject(e)).map(t => ({name: getName(t.name)}))

@@ -22,8 +22,8 @@ export interface TBoolean {
 
 export interface TEnum {
     kind: TTypeKind.Enum
-    enumName: string
-    defaultValueName: string
+    name: string
+    elementNames: string[]
 }
 
 export interface TBuiltInClass {
