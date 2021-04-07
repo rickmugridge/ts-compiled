@@ -217,7 +217,7 @@ export class LoggerBuilder {
      return this
   }
   to(): Logger {
-     return logger
+     return this.logger
   }
 }
 `)

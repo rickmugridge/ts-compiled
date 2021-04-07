@@ -13,7 +13,7 @@ export class @{className}Builder {
   }
 @{methods}
   to(): @{className} {
-     return @{lowerName}
+     return this.@{lowerName}
   }
 }
 `
